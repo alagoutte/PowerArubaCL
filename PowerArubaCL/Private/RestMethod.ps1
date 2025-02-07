@@ -79,6 +79,7 @@ function Invoke-ArubaCLRestMethod {
         if ( $PsBoundParameters.ContainsKey('limit') ) {
             $fullurl += "&limit=$limit"
         }
+        Write-Verbose $fullurl
 
         try {
             if ($body) {
