@@ -33,20 +33,24 @@ function Connect-ArubaCL {
 
     Param(
         [Parameter(Mandatory = $true, position = 1)]
-        [ValidateSet('APAC-1', 'APAC-EAST1', 'APAC-SOUTH1', 'Canada-1', 'China-1', 'EU-1', 'US-1', 'US-2', 'US-WEST4', 'EU-CENTRAL3')]
+        [ValidateSet('APAC-1', 'APAC-EAST1', 'APAC-SOUTH1', 'Canada-1', 'China-1', 'EU-1', 'US-1', 'US-2', 'US-WEST4', 'EU-CENTRAL3', "EU-CENTRAL2")]
         [String]$region,
+        <#
         [Parameter(Mandatory = $false)]
         [String]$Username,
         [Parameter(Mandatory = $false)]
         [SecureString]$Password,
         [Parameter(Mandatory = $false)]
         [PSCredential]$Credential,
+        #>
         [Parameter(Mandatory = $true)]
         [String]$client_id,
         [Parameter(Mandatory = $true)]
         [String]$client_secret,
+        <#
         [Parameter(Mandatory = $true)]
         [String]$customer_id,
+        #>
         [Parameter(Mandatory = $false)]
         [boolean]$DefaultConnection = $true
     )
@@ -59,7 +63,7 @@ function Connect-ArubaCL {
         $token = @{access_token = ""; refresh_token = ""; expire = ""; client_id = ""; client_secret = ""; }
         $connection = @{server = ""; session = ""; token = $token; headers = ""; invokeParams = "" }
         $invokeParams = @{ UseBasicParsing = $true; }
-
+        <#
         #If there is a password (and a user), create a credential
         if ($Password) {
             $Credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
@@ -69,7 +73,7 @@ function Connect-ArubaCL {
         if ($null -eq $Credential) {
             $Credential = Get-Credential -Message 'Please enter administrative credential for your Aruba Central'
         }
-
+#>
         #for PowerShell (<=) 5 (Desktop), Enable TLS 1.1, 1.2
         if ("Desktop" -eq $PSVersionTable.PsEdition) {
             #Enable TLS 1.1 and 1.2
@@ -101,10 +105,13 @@ function Connect-ArubaCL {
                 $server = "apigw.central.arubanetworks.com.cn"
             }
             'EU-1' {
-                $server = "eu-apigw.central.arubanetworks.com"
+                $server = "ge1.api.central.arubanetworks.com"
+            }
+            'EU-Central2' {
+                $server = "ge2.api.central.arubanetworks.com"
             }
             'EU-CENTRAL3' {
-                $server = "apigw-eucentral3.central.arubanetworks.com"
+                $server = "ge3.api.central.arubanetworks.com"
             }
             'US-1' {
                 $server = "app1-apigw.central.arubanetworks.com"
@@ -117,25 +124,28 @@ function Connect-ArubaCL {
             }
         }
 
-        $postParams = @{username = $Credential.username; password = $Credential.GetNetworkCredential().Password }
+        #$postParams = @{username = $Credential.username; password = $Credential.GetNetworkCredential().Password }
 
-        $url = "https://${Server}/oauth2/authorize/central/api/login"
-        $url += "?client_id=${client_id}"
-        $headers = @{ Accept = "application/json"; "Content-type" = "application/json" }
+        $url = "https://sso.common.cloud.hpe.com/as/token.oauth2"
+        $postParams = @{
+            grant_type    = "client_credentials";
+            client_id     = $client_id;
+            client_secret = $client_secret
+        }
+        #$url += "?grant_type=client_credentials&client_id=${client_id}&client_secret=${client_secret}"
+        #$headers = @{ Accept = "application/json"; "Content-type" = "application/json" }
+        $headers = @{ "Content-Type" = "application/x-www-form-urlencoded" }
         Write-Verbose ($postParams | ConvertTo-Json)
         try {
-            $response = Invoke-RestMethod $url -Method POST -Body ($postParams | ConvertTo-Json) -SessionVariable ArubaCL -headers $headers @invokeParams
+            $response = Invoke-RestMethod $url -Method POST -body $postParams -SessionVariable ArubaCL -headers $headers @invokeParams
         }
         catch {
             Show-ArubaCLException $_
             throw "Unable to login"
         }
 
-        if ($response.status -ne "True") {
-            $errormsg = $response.message
-            throw "Unable to connect ($errormsg)"
-        }
-
+        Write-host $response.expires_in
+        <#
         #Search crsf cookie and session
         $cookies = $ArubaCL.Cookies.GetCookies($url)
         foreach ($cookie in $cookies) {
@@ -174,8 +184,9 @@ function Connect-ArubaCL {
             Show-ArubaCLException $_
             throw "Unable to get token"
         }
-
-        #Add Access token to headers
+#>
+        #Set Access token (Authorization Bearer) and Content-Type to headers
+        $headers = @{ "Content-Type" = "application/jsond" }
         $headers.add( "Authorization", "Bearer " + $response.access_token)
 
         $connection.server = $server
@@ -186,7 +197,7 @@ function Connect-ArubaCL {
         $connection.token.client_id = $client_id
         $connection.token.client_secret = $client_secret
         $connection.token.access_token = $response.access_token
-        $connection.token.refresh_token = $response.refresh_token
+        #$connection.token.refresh_token = $response.refresh_token
         #Get when token will be expire
         $connection.token.expire = [int]((Get-Date -UFormat %s) -split ",")[0] + $response.expires_in
 
